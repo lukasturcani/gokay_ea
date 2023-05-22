@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dynamic = ["version"]
 readme = "README.rst"
 maintainers = [
- { name = "Gokay Avci" email = "g.avci@imperial.ac.uk" },
+ { name = "Gokay Avci", email = "g.avci@imperial.ac.uk" },
 ]
 
 [project.scripts]
@@ -50,8 +50,7 @@ disallow_untyped_decorators = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = [
-]
+module = []
 ignore_missing_imports = true
 
 [build-system]
