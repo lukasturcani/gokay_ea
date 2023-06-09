@@ -2,6 +2,8 @@
 name = "gokay_ea"
 dependencies = [
   "stk",
+  "pywindowx",
+  "atomlite",
 ]
 requires-python = ">=3.11"
 dynamic = ["version"]
@@ -50,7 +52,10 @@ disallow_untyped_decorators = true
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = []
+module = [
+  "rdkit.*",
+  "pywindow.*"
+]
 ignore_missing_imports = true
 
 [build-system]
