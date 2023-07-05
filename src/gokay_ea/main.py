@@ -1,8 +1,8 @@
 import argparse
-import collections
 import itertools
 import logging
 import pathlib
+from collections import abc
 
 import atomlite
 import numpy as np
@@ -13,7 +13,7 @@ import stk
 def get_building_blocks(
     path: pathlib.Path,
     functional_group_factory: stk.FunctionalGroupFactory,
-) -> collections.abc.Iterator[stk.BuildingBlock]:
+) -> abc.Iterator[stk.BuildingBlock]:
     with open(path, "r") as f:
         content = f.readlines()
 
@@ -22,10 +22,10 @@ def get_building_blocks(
 
 
 def get_initial_population(
-    aldehydes: collections.abc.Iterable[stk.BuildingBlock],
-    amines: collections.abc.Iterable[stk.BuildingBlock],
+    aldehydes: abc.Iterable[stk.BuildingBlock],
+    amines: abc.Iterable[stk.BuildingBlock],
     generator: np.random.Generator,
-) -> collections.abc.Iterator[stk.MoleculeRecord]:
+) -> abc.Iterator[stk.MoleculeRecord]:
     for aldehyde, amine in itertools.product(aldehydes, amines):
         yield stk.MoleculeRecord(
             topology_graph=stk.cage.FourPlusSix(
@@ -76,8 +76,8 @@ def get_num_functional_groups(building_block: stk.BuildingBlock) -> int:
 def normalize_generations(
     fitness_calculator: stk.FitnessCalculator,
     fitness_normalizer: stk.FitnessNormalizer,
-    generations: collections.abc.Sequence[stk.Generation],
-) -> collections.abc.Iterator[stk.Generation]:
+    generations: abc.Sequence[stk.Generation],
+) -> abc.Iterator[stk.Generation]:
     population = tuple(
         record.with_fitness_value(
             fitness_value=fitness_calculator.get_fitness_value(
