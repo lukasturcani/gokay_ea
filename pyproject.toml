@@ -2,6 +2,7 @@
 name = "gokay_ea"
 dependencies = [
   "stk",
+  "stko",
   "pywindowx",
   "atomlite",
 ]
@@ -15,9 +16,8 @@ maintainers = [
 [project.scripts]
 gokay_ea = "gokay_ea.main:main"
 
-# TODO: complete
-# [project.urls]
-# github = "https://github.com/"
+[project.urls]
+github = "https://github.com/gokay-avci/gokay_ea"
 
 [project.optional-dependencies]
 dev = [
@@ -25,10 +25,6 @@ dev = [
   "mypy",
   "ruff",
 ]
-
-
-[tool.setuptools.package-data]
-gokay_ea = ["py.typed"]
 
 [tool.setuptools_scm]
 fallback_version = "v0.0.0"
@@ -54,7 +50,8 @@ warn_unreachable = true
 [[tool.mypy.overrides]]
 module = [
   "rdkit.*",
-  "pywindow.*"
+  "pywindow.*",
+  "stko.*",
 ]
 ignore_missing_imports = true
 
