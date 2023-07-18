@@ -2,14 +2,17 @@ import argparse
 import itertools
 import logging
 import pathlib
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator
 from functools import partial
+from typing import Any, TypeAlias, cast
 
 import atomlite
 import numpy as np
 import pywindow
 import stk
 import stko
+
+MoleculeRecord: TypeAlias = stk.MoleculeRecord[stk.cage.Cage]
 
 
 def get_building_blocks(
@@ -26,7 +29,7 @@ def get_initial_population(
     aldehydes: Iterable[stk.BuildingBlock],
     amines: Iterable[stk.BuildingBlock],
     generator: np.random.Generator,
-) -> Iterator[stk.MoleculeRecord]:
+) -> Iterator[MoleculeRecord]:
     for aldehyde, amine in itertools.product(aldehydes, amines):
         yield stk.MoleculeRecord(
             topology_graph=stk.cage.FourPlusSix(
@@ -45,24 +48,23 @@ def get_initial_population(
         )
 
 
-def get_key(record: stk.MoleculeRecord) -> str:
+def get_key(record: MoleculeRecord) -> str:
     pass
 
 
 def get_pore_diameter(
     db: atomlite.Database,
-    record: stk.MoleculeRecord,
+    record: MoleculeRecord,
 ) -> float:
     key = get_key(record)
-    pore_diameter = db.get_property(key, "$.gokay_ea.pore_diameter")
+    path = "$.gokay_ea.pore_diameter"
+    pore_diameter = cast(float | None, db.get_property(key, path))
     if pore_diameter is None:
         pw_mol = pywindow.Molecule.load_rdkit_mol(
             record.get_molecule().to_rdkit_mol()
         )
         pore_diameter = pw_mol.calculate_pore_diameter()
-        assert isinstance(pore_diameter, float)
-        db.set_property(key, "$.gokay_ea.pore_diameter", pore_diameter)
-    assert isinstance(pore_diameter, float)
+        db.set_property(key, path, pore_diameter)
     return pore_diameter
 
 
@@ -70,11 +72,11 @@ def get_caffeine_binding_energy(
     xtb_path: pathlib.Path,
     xtb_output_dir: pathlib.Path,
     db: atomlite.Database,
-    record: stk.MoleculeRecord,
+    record: MoleculeRecord,
 ) -> float:
     key = get_key(record)
-    property = "$.gokay_ea.caffeine_binding_energy"
-    energy = db.get_property(key, property)
+    path = "$.gokay_ea.caffeine_binding_energy"
+    energy = cast(float | None, db.get_property(key, path))
     if energy is None:
         xtb = stko.XTBEnergy(
             xtb_path=str(xtb_path),
@@ -82,9 +84,8 @@ def get_caffeine_binding_energy(
             cycles=1,
         )
         xtb_results = xtb.get_results(record.get_molecule())
-        energy = total_energy = xtb_results.get_total_energy()[0]
-        db.set_property(key, property, total_energy)
-    assert isinstance(energy, float)
+        energy = xtb_results.get_total_energy()[0]
+        db.set_property(key, path, energy)
     return energy
 
 
@@ -107,34 +108,20 @@ def get_num_functional_groups(building_block: stk.BuildingBlock) -> int:
     return building_block.get_num_functional_groups()
 
 
-def normalize_generations(
-    fitness_calculator: stk.FitnessCalculator,
-    fitness_normalizer: stk.FitnessNormalizer,
-    generations: Sequence[stk.Generation],
-) -> Iterator[stk.Generation]:
-    population = tuple(
-        record.with_fitness_value(
-            fitness_value=fitness_calculator.get_fitness_value(record),
-            normalized=False,
-        )
-        for generation in generations
-        for record in generation.get_molecule_records()
+def get_entry(generation: int, record: MoleculeRecord) -> atomlite.Entry:
+    return atomlite.Entry.from_rdkit(
+        key=get_key(record),
+        molecule=record.get_molecule().to_rdkit_mol(),
+        properties={
+            "gokay_ea": {
+                f"generation_{generation}": None,
+                "building_blocks": [
+                    stk.Smiles().get_key(bb)
+                    for bb in record.get_topology_graph().get_building_blocks()
+                ],
+            },
+        },
     )
-    population = tuple(fitness_normalizer.normalize(population))
-    num_generations = len(generations)
-    population_size = sum(1 for _ in generations[0].get_molecule_records())
-    num_molecules = num_generations * population_size
-
-    for generation, start in zip(
-        generations,
-        range(0, num_molecules, population_size),
-    ):
-        end = start + population_size
-        yield stk.Generation(
-            molecule_records=population[start:end],
-            mutation_records=tuple(generation.get_mutation_records()),
-            crossover_records=tuple(generation.get_crossover_records()),
-        )
 
 
 def main() -> None:
@@ -170,7 +157,7 @@ def main() -> None:
         ),
     )
 
-    generation_selector = stk.Best(
+    generation_selector: stk.Best[MoleculeRecord] = stk.Best(
         num_batches=4,
         duplicate_molecules=False,
     )
@@ -179,29 +166,29 @@ def main() -> None:
         selector=generation_selector,
     )
 
-    mutation_selector = stk.Roulette(
+    mutation_selector: stk.Roulette[MoleculeRecord] = stk.Roulette(
         num_batches=1,
         random_seed=generator,
     )
     stk.SelectionPlotter("mutation_selection", mutation_selector)
 
-    crossover_selector = stk.Roulette(
+    crossover_selector: stk.Roulette[MoleculeRecord] = stk.Roulette(
         num_batches=1,
         batch_size=2,
         random_seed=generator,
     )
     stk.SelectionPlotter("crossover_selection", crossover_selector)
 
-    fitness_normalizer = stk.NormalizerSequence(
+    fitness_normalizer: stk.NormalizerSequence[
+        MoleculeRecord
+    ] = stk.NormalizerSequence(
         fitness_normalizers=(
-            stk.Power((2, 2, 2)),
-            stk.Multiply((1, 1, 1)),
             stk.DivideByMean(),
             stk.Sum(),
             stk.Power(-1),
         ),
     )
-    ea = stk.EvolutionaryAlgorithm(
+    ea: stk.EvolutionaryAlgorithm[MoleculeRecord] = stk.EvolutionaryAlgorithm(
         num_processes=1,
         initial_population=initial_population,
         fitness_calculator=fitness_calculator,
@@ -240,30 +227,51 @@ def main() -> None:
     logging.info("Starting EA.")
 
     generations = []
-    for generation in ea.get_generations(5):
-        for record in generation.get_molecule_records():
-            db.add_entries(record.get_molecule().to_rdkit())
-        generations.append(generation)
+    fitness_values: dict[MoleculeRecord, Any] = {}
+    pore_diamaters = []
+    for i, generation in enumerate(ea.get_generations(5)):
+        db.update_entries(
+            map(partial(get_entry, i), generation.get_molecule_records())
+        )
+        generations.append(list(generation.get_molecule_records()))
+        fitness_values.update(
+            (record, fitness_value.raw)
+            for record, fitness_value in generation.get_fitness_values().items()
+        )
+        pore_diamaters.append(
+            [
+                cast(
+                    float,
+                    db.get_property(
+                        key=get_key(record),
+                        path="$.gokay_ea.pore_diamater",
+                    ),
+                )
+                for record in generation.get_molecule_records()
+            ]
+        )
 
     # Write the final population.
+    writer = stk.MolWriter()
+    final_population_directory = pathlib.Path("final_population")
+    final_population_directory.mkdir(exist_ok=True, parents=True)
     for i, record in enumerate(generation.get_molecule_records()):
-        write(record.get_molecule(), f"final_{i}.mol")
+        writer.write(
+            molecule=record.get_molecule(),
+            path=final_population_directory / f"final_{i}.mol",
+        )
 
     logging.info("Making fitness plot.")
 
     # Normalize the fitness values across the entire EA before
     # plotting the fitness values.
-    generations = tuple(
-        normalize_generations(
-            fitness_calculator=fitness_calculator,
-            fitness_normalizer=fitness_normalizer,
-            generations=generations,
-        )
-    )
-
+    normalized_fitness_values = fitness_normalizer.normalize(fitness_values)
+    fitness_values_by_generation = [
+        [normalized_fitness_values[record] for record in generation]
+        for generation in generations
+    ]
     fitness_progress = stk.ProgressPlotter(
-        generations=generations,
-        get_property=lambda record: record.get_fitness_value(),
+        property=fitness_values_by_generation,
         y_label="Fitness Value",
     )
     fitness_progress.get_plot_data().to_csv("fitness_progress.csv")
@@ -271,12 +279,11 @@ def main() -> None:
 
     logging.info("Making rotatable bonds plot.")
 
-    rotatable_bonds_progress = stk.ProgressPlotter(
-        generations=generations,
-        get_property=lambda record: get_pore_diameter(record.get_molecule()),
+    pore_diamater_progress = stk.ProgressPlotter(
+        property=pore_diamaters,
         y_label="Pore diameter",
     )
-    rotatable_bonds_progress.write("pore_diameter_progress.png")
+    pore_diamater_progress.write("pore_diameter_progress.png")
 
 
 def parse_args() -> argparse.Namespace:
