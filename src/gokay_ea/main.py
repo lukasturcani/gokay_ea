@@ -49,7 +49,10 @@ def get_initial_population(
 
 
 def get_key(record: MoleculeRecord) -> str:
-    pass
+    alignments = sorted(
+        record.get_topology_graph().get_vertex_alignments().items()
+    )
+    return f"{stk.Inchi().get_key(record.get_molecule())}_{alignments}"
 
 
 def get_pore_diameter(
