@@ -22,7 +22,7 @@ def get_building_blocks(
     with open(path, "r") as f:
         content = f.readlines()
     for smiles in content:
-        yield stk.BuildingBlock(smiles, [functional_group_factory])
+        yield stk.BuildingBlock(smiles, functional_group_factory)
 
 
 def get_initial_population(
